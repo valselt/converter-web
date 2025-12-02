@@ -7,26 +7,41 @@ const actionPanel = document.getElementById('actionPanel');
 const optionsGrid = document.getElementById('optionsGrid');
 const convertBtn = document.getElementById('convertBtn');
 const statusMsg = document.getElementById('statusMsg');
-const resetBtn = document.getElementById('resetBtn'); // Ambil tombol reset
+const resetBtn = document.getElementById('resetBtn');
 
 // --- EVENT LISTENERS ---
 dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
 dropzone.addEventListener('dragleave', () => { dropzone.classList.remove('dragover'); });
 dropzone.addEventListener('drop', (e) => { e.preventDefault(); dropzone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
 fileInput.addEventListener('change', (e) => { handleFiles(e.target.files); });
+resetBtn.addEventListener('click', resetUI);
 
-// Listener Tombol Reset (Ganti File)
 resetBtn.addEventListener('click', resetUI);
 
 function resetUI() {
-    currentFiles = [];
-    selectedFormat = null;
-    fileInput.value = ''; // Reset input file agar bisa pilih file yang sama
+    // 1. Ambil elemen icon di dalam tombol
+    const icon = resetBtn.querySelector('.material-symbols-rounded');
     
-    // Tampilkan Dropzone, Sembunyikan Panel
-    dropzone.classList.remove('hidden');
-    actionPanel.classList.add('hidden');
-    document.getElementById('resultArea').classList.add('hidden');
+    // 2. Tambahkan class animasi ke Icon dan Panel
+    icon.classList.add('spin-icon');
+    actionPanel.classList.add('slide-out');
+
+    // 3. Tunggu 300ms (sesuai durasi animasi CSS) baru reset data
+    setTimeout(() => {
+        currentFiles = [];
+        selectedFormat = null;
+        fileInput.value = ''; 
+        
+        // Reset Tampilan
+        dropzone.classList.remove('hidden');
+        actionPanel.classList.add('hidden');
+        document.getElementById('resultArea').classList.add('hidden');
+        
+        // Bersihkan class animasi agar bisa dipakai lagi nanti
+        icon.classList.remove('spin-icon');
+        actionPanel.classList.remove('slide-out');
+        
+    }, 300); // Waktu tunggu
 }
 
 // --- LOGIKA UI ---
@@ -34,7 +49,6 @@ function handleFiles(files) {
     if (files.length === 0) return;
     currentFiles = files;
     
-    // UI SWAP: Sembunyikan Dropzone, Tampilkan Panel
     dropzone.classList.add('hidden'); 
     actionPanel.classList.remove('hidden');
     
@@ -42,8 +56,6 @@ function handleFiles(files) {
     statusMsg.textContent = "";
     convertBtn.disabled = true;
     selectedFormat = null;
-    
-    // Reset style grid options
     optionsGrid.innerHTML = '';
     
     const mainFile = files[0];
@@ -53,7 +65,6 @@ function handleFiles(files) {
     generateOptions(mainFile.type, files.length);
 }
 
-// ... (Fungsi generateOptions dan createOptionCard TETAP SAMA, tidak perlu diubah) ...
 function generateOptions(mimeType, count) {
     optionsGrid.innerHTML = ''; 
     if (mimeType.startsWith('image/')) {
@@ -97,8 +108,12 @@ convertBtn.addEventListener('click', () => {
     else processImageToImage(selectedFormat);
 });
 
+// Helper untuk membersihkan nama file (hapus ekstensi lama)
+function getBaseName(filename) {
+    return filename.substring(0, filename.lastIndexOf('.')) || filename;
+}
 
-// 1. IMAGE TO PDF (REVISI TOTAL: NO MARGIN, EXACT SIZE)
+// 1. IMAGE TO PDF
 async function processImageToPDF() {
     const { jsPDF } = window.jspdf;
     let doc = null; 
@@ -108,34 +123,33 @@ async function processImageToPDF() {
         
         const imgData = await readFileAsync(file);
         const props = await getImageProperties(imgData);
-
-        // LOGIKA BARU: 
-        // Jangan paksa ke A4. Buat ukuran PDF SAMA PERSIS dengan ukuran Gambar (pixel).
-        // Gunakan unit 'px' agar akurat 1:1 tanpa margin putih.
         
         const orientation = props.w > props.h ? 'l' : 'p';
-        const format = [props.w, props.h]; // Ukuran kertas = Ukuran gambar
+        const format = [props.w, props.h]; 
 
         if (i === 0) {
             doc = new jsPDF({ 
                 orientation: orientation, 
                 unit: 'px', 
                 format: format,
-                hotfixes: ['px_scaling'] // Fix untuk versi jsPDF baru agar pixel akurat
+                hotfixes: ['px_scaling'] 
             });
         } else {
             doc.addPage(format, orientation);
         }
 
-        // Add Image di koordinat 0,0 dengan lebar & tinggi penuh
         doc.addImage(imgData, 'JPEG', 0, 0, props.w, props.h);
     }
 
-    doc.save("converted-document.pdf");
+    // UPDATE PENAMAAN FILE PDF
+    const originalName = currentFiles[0].name;
+    const baseName = getBaseName(originalName);
+    doc.save(`${baseName}_convertedbyvalselt.pdf`);
+    
     statusMsg.textContent = "Berhasil! PDF telah didownload.";
 }
 
-// ... (Fungsi processCSVtoJSON, processImageToImage, formatBytes, downloadFile, readFileAsync, getImageProperties TETAP SAMA) ...
+// 2. CSV TO JSON
 function processCSVtoJSON() {
     const file = currentFiles[0];
     const reader = new FileReader();
@@ -159,6 +173,7 @@ function processCSVtoJSON() {
     reader.readAsText(file);
 }
 
+// 3. IMAGE TO IMAGE
 function processImageToImage(format) {
     const file = currentFiles[0];
     const reader = new FileReader();
@@ -172,13 +187,21 @@ function processImageToImage(format) {
             const ctx = canvas.getContext('2d');
             if(format === 'image/jpeg') { ctx.fillStyle="#FFF"; ctx.fillRect(0,0,canvas.width,canvas.height); }
             ctx.drawImage(img,0,0);
-            downloadFile(canvas.toDataURL(format, 0.9), `result.${format.split('/')[1]}`);
+            
+            // UPDATE PENAMAAN FILE GAMBAR
+            const ext = format.split('/')[1]; // png, jpeg, webp
+            const originalName = file.name;
+            const baseName = getBaseName(originalName);
+            const finalName = `${baseName}_convertedbyvalselt.${ext}`;
+
+            downloadFile(canvas.toDataURL(format, 0.9), finalName);
             statusMsg.textContent = "Selesai.";
         }
     }
     reader.readAsDataURL(file);
 }
 
+// UTILS
 function formatBytes(bytes) { if(bytes===0)return '0 B'; const i=Math.floor(Math.log(bytes)/Math.log(1024)); return parseFloat((bytes/Math.pow(1024,i)).toFixed(2))+' '+['B','KB','MB'][i]; }
 function downloadFile(url, name) { const a = document.createElement('a'); a.href=url; a.download=name; a.click(); }
 function readFileAsync(file) { return new Promise(r => { const reader=new FileReader(); reader.onload=e=>r(e.target.result); reader.readAsDataURL(file); }); }

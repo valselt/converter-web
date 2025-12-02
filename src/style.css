@@ -332,3 +332,80 @@ body { font-family: var(--font-main); background-color: var(--bg-body); display:
     from { opacity: 1; transform: translateY(0); }
     to { opacity: 0; transform: translateY(10px); }
 }
+
+.file-preview {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    object-fit: cover; /* Agar gambar crop rapi kotak */
+    border: 1px solid #E5E7EB;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.icon-placeholder {
+    font-size: 36px;
+    color: var(--primary);
+    background: var(--primary-light);
+    padding: 6px;
+    border-radius: 8px;
+}
+
+/* Helper Class */
+.hidden { display: none !important; }
+
+/* Definisi Animasi: Upload Flow */
+@keyframes cloudPulse {
+    0% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(79, 70, 229, 0)); }
+    50% { transform: scale(1.15); filter: drop-shadow(0 0 10px rgba(79, 70, 229, 0.4)); }
+    100% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(79, 70, 229, 0)); }
+}
+
+/* Terapkan */
+.dropzone:hover .material-symbols-rounded,
+.dropzone.dragover .material-symbols-rounded {
+    animation: cloudPulse 1.5s infinite;
+    color: var(--primary);
+}
+
+/* Opsional: Tambahkan transisi agar perubahan warna halus */
+.material-symbols-rounded {
+    transition: color 0.3s ease;
+}
+
+/* Style Progress Bar */
+.progress-container {
+    width: 100%;
+    height: 8px;
+    background-color: #E5E7EB; /* Abu-abu terang */
+    border-radius: 10px;
+    overflow: hidden;
+    position: relative;
+}
+
+.progress-fill {
+    width: 0%; /* Mulai dari 0 */
+    height: 100%;
+    background-color: var(--primary);
+    border-radius: 10px;
+    transition: width 0.1s linear; /* Animasi halus */
+}
+
+/* Animasi Icon Berputar (Loading) */
+@keyframes spinLoad {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.spin-loading {
+    animation: spinLoad 1s linear infinite;
+}
+
+#uploadLoader {
+    margin: 20px auto; /* 'auto' di kiri-kanan membuat elemen ke tengah */
+    width: 100%;
+    max-width: 300px;
+    text-align: center;
+    display: flex;       /* Flexbox membantu alignment anak elemen */
+    flex-direction: column;
+    align-items: center; /* Memastikan icon dan bar tepat di tengah garis vertikal */
+}

@@ -1,0 +1,9 @@
+services:
+  web-converter:
+    image: nginx:alpine
+    container_name: converter-by-valselt
+    ports:
+      - "1923:80"  # <--- Port diubah ke 1923
+    volumes:
+      - ./src:/usr/share/nginx/html
+    restart: unless-stopped

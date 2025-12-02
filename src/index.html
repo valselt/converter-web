@@ -29,20 +29,37 @@
         </header>
 
         <div class="dropzone" id="dropzone">
-            <div class="icon-cloud">
-                <span class="material-symbols-rounded" style="font-size: 64px;">cloud_upload</span>
+    
+            <div id="dropzoneContent">
+                <div class="icon-cloud">
+                    <span class="material-symbols-rounded" style="font-size: 64px;">cloud_upload</span>
+                </div>
+                <h3>Pilih File atau Drag ke sini</h3>
+                <p class="limit-info">Mendukung JPG, PNG, WEBP, CSV</p>
+                <button class="browse-btn" onclick="document.getElementById('fileInput').click()">Cari di Komputer</button>
             </div>
-            <h3>Pilih File atau Drag ke sini</h3>
-            <p class="limit-info">Mendukung JPG, PNG, WEBP, CSV</p>
+
+            <div id="uploadLoader" class="hidden">
+                <span class="material-symbols-rounded spin-icon" style="font-size: 40px; color: var(--primary); margin-bottom: 15px;">sync</span>
+                <p style="margin-bottom: 10px; font-weight: 600; color: var(--text-muted);">Mengupload file...</p>
+                
+                <div class="progress-container">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+
             <input type="file" id="fileInput" multiple hidden>
-            <button class="browse-btn" onclick="document.getElementById('fileInput').click()">Cari di Komputer</button>
         </div>
 
         <div id="actionPanel" class="action-panel hidden">
             
             <div class="file-info">
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span class="material-symbols-rounded">description</span>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    
+                    <span id="defaultIcon" class="material-symbols-rounded icon-placeholder">description</span>
+                    
+                    <img id="previewImage" class="file-preview hidden" alt="Preview">
+
                     <div style="display: flex; flex-direction: column; align-items: flex-start;">
                         <span id="fileName" style="font-weight: 600;">nama-file.jpg</span>
                         <span id="fileSize" class="badge">0 MB</span>

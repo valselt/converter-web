@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Converter Local</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,300,0,200" />
+    
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+
+    <main class="converter-card">
+        <header>
+            <h1>File Converter</h1>
+            <p>Drag & drop file apapun, kami akan sesuaikan formatnya.</p>
+        </header>
+
+        <div class="dropzone" id="dropzone">
+            <div class="icon-cloud">
+                <span class="material-symbols-rounded" style="font-size: 64px;">cloud_upload</span>
+            </div>
+            <h3>Pilih File atau Drag ke sini</h3>
+            <p class="limit-info">Mendukung JPG, PNG, WEBP, CSV</p>
+            <input type="file" id="fileInput" multiple hidden>
+            <button class="browse-btn" onclick="document.getElementById('fileInput').click()">Cari di Komputer</button>
+        </div>
+
+        <div id="actionPanel" class="action-panel hidden">
+            
+            <div class="file-info">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span class="material-symbols-rounded">description</span>
+                    <div style="display: flex; flex-direction: column; align-items: flex-start;">
+                        <span id="fileName" style="font-weight: 600;">nama-file.jpg</span>
+                        <span id="fileSize" class="badge">0 MB</span>
+                    </div>
+                </div>
+                
+                <button id="resetBtn" class="icon-btn" title="Ganti File">
+                    <span class="material-symbols-rounded">close</span>
+                </button>
+            </div>
+
+            <div class="controls">
+                <label>Pilih Format Tujuan:</label>
+                <div id="optionsGrid" class="options-grid">
+                    </div>
+            </div>
+
+            <button id="convertBtn" class="convert-btn" disabled>
+                Mulai Konversi
+            </button>
+
+            <p id="statusMsg"></p>
+        </div>
+
+        <div id="resultArea" class="hidden">
+            <textarea id="textOutput" readonly></textarea>
+        </div>
+
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>

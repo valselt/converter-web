@@ -1,5 +1,6 @@
 {
     "require": {
-        "aws/aws-sdk-php": "^3.364"
+        "aws/aws-sdk-php": "^3.364",
+        "setasign/fpdf": "^1.8"
     }
 }

@@ -1,0 +1,98 @@
+<?php
+
+require 'vendor/autoload.php';
+
+use Aws\S3\S3Client;
+use Aws\Exception\AwsException;
+
+header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: POST');
+
+// --- KONFIGURASI (SESUAIKAN DISINI) ---
+$minioConfig = [
+    'version' => 'latest',
+    'region'  => 'us-east-1',
+    'endpoint' => 'http://host.docker.internal:9000', // Port MinIO Anda
+    'use_path_style_endpoint' => true,
+    'credentials' => [
+        'key'    => 'MASUKKAN_ACCESS_KEY_MINIO_ANDA',
+        'secret' => 'MASUKKAN_SECRET_KEY_MINIO_ANDA',
+    ],
+];
+
+$dbConfig = [
+    'host' => 'host.docker.internal', // IP Server CasaOS
+    'user' => 'root',                 // User DB
+    'pass' => 'MASUKKAN_PASSWORD_DB', // Password DB
+    'name' => 'converter_by_valselt'
+];
+
+$bucketName = "converter";
+$cdnDomain = "http://cdn.ivanaldorino.web.id/converter"; // Domain CDN Anda
+
+// --- LOGIKA UPLOAD ---
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    echo json_encode(['status' => 'error', 'message' => 'Method not allowed']);
+    exit;
+}
+
+try {
+    // 1. Koneksi ke MinIO
+    $s3 = new S3Client($minioConfig);
+
+    // 2. Koneksi ke MySQL
+    $pdo = new PDO("mysql:host={$dbConfig['host']};dbname={$dbConfig['name']}", $dbConfig['user'], $dbConfig['pass']);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+    // 3. Ambil File dari Request (Original & Converted)
+    if (!isset($_FILES['file_original']) || !isset($_FILES['file_converted'])) {
+        throw new Exception("File tidak lengkap dikirim.");
+    }
+
+    $fileOriginal = $_FILES['file_original'];
+    $fileConverted = $_FILES['file_converted'];
+
+    // 4. Upload Original ke MinIO
+    $keyOriginal = 'original/' . time() . '_' . basename($fileOriginal['name']);
+    $s3->putObject([
+        'Bucket' => $bucketName,
+        'Key'    => $keyOriginal,
+        'SourceFile' => $fileOriginal['tmp_name'],
+        'ACL'    => 'public-read' // Sebenarnya sudah diatur di policy bucket
+    ]);
+
+    // 5. Upload Converted ke MinIO
+    $keyConverted = 'converted/' . time() . '_' . basename($fileConverted['name']);
+    $s3->putObject([
+        'Bucket' => $bucketName,
+        'Key'    => $keyConverted,
+        'SourceFile' => $fileConverted['tmp_name'],
+        'ACL'    => 'public-read'
+    ]);
+
+    // 6. Simpan ke Database
+    $urlOriginal = $cdnDomain . "/" . $keyOriginal;
+    $urlConverted = $cdnDomain . "/" . $keyConverted;
+
+    $stmt = $pdo->prepare("INSERT INTO conversion_logs (filename_original, filename_converted, path_original, path_converted, file_type, file_size_original) VALUES (?, ?, ?, ?, ?, ?)");
+    $stmt->execute([
+        $fileOriginal['name'],
+        $fileConverted['name'],
+        $urlOriginal,
+        $urlConverted,
+        $fileConverted['type'],
+        round($fileOriginal['size'] / 1024, 2) . ' KB'
+    ]);
+
+    echo json_encode([
+        'status' => 'success',
+        'message' => 'Upload berhasil',
+        'download_url' => $urlConverted
+    ]);
+
+} catch (Exception $e) {
+    http_response_code(500);
+    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+}

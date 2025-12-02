@@ -1,9 +1,24 @@
 services:
-  web-converter:
+  # 1. Web Server (Nginx)
+  web-server:
     image: nginx:alpine
-    container_name: converter-by-valselt
+    container_name: converter-web
     ports:
-      - "1923:80"  # <--- Port diubah ke 1923
+      - "1923:80"
     volumes:
-      - ./src:/usr/share/nginx/html
+      - ./src:/var/www/html
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - php-converter
     restart: unless-stopped
+
+  # 2. PHP Backend
+  php-converter:
+    build: ./php
+    container_name: converter-php
+    volumes:
+      - ./src:/var/www/html
+    restart: unless-stopped
+    # Agar PHP bisa bicara dengan MySQL dan MinIO di CasaOS (luar container ini)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

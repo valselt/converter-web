@@ -1,16 +1,21 @@
 <?php
 // src/backend/process.php
 
+// 1. Matikan Output Error ke Browser (Agar JSON bersih)
 ini_set('display_errors', 0);
 ini_set('log_errors', 1); 
 error_reporting(E_ALL);
 
 ini_set('memory_limit', '512M'); 
 ini_set('max_execution_time', 300); 
+
+// Buffer output untuk menangkap warning tak terduga
 ob_start();
 
 require 'vendor/autoload.php';
+
 use Aws\S3\S3Client;
+use Setasign\Fpdf\Fpdf; 
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
@@ -42,16 +47,13 @@ $cdnDomain = "http://cdn.ivanaldorino.web.id/converter";
 // --- FUNGSI BANTUAN KONVERSI ---
 
 function convertImageToImage($source, $dest, $targetFormat) {
-    // Load gambar berdasarkan tipe aslinya
     $info = getimagesize($source);
     if ($info['mime'] == 'image/jpeg') $image = imagecreatefromjpeg($source);
     elseif ($info['mime'] == 'image/png') $image = imagecreatefrompng($source);
     elseif ($info['mime'] == 'image/webp') $image = imagecreatefromwebp($source);
     else return false;
 
-    // Simpan ke format baru
     if ($targetFormat == 'jpg' || $targetFormat == 'jpeg') {
-        // Jika JPG, tambahkan background putih (biar transparan gak jadi hitam)
         $bg = imagecreatetruecolor(imagesx($image), imagesy($image));
         imagefill($bg, 0, 0, imagecolorallocate($bg, 255, 255, 255));
         imagecopy($bg, $image, 0, 0, 0, 0, imagesx($image), imagesy($image));
@@ -73,56 +75,39 @@ function convertImageToImage($source, $dest, $targetFormat) {
 }
 
 function convertImageToPDF($source, $dest) {
-    // 1. Ambil dimensi asli gambar (Pixel)
     $size = getimagesize($source);
     $widthPx = $size[0];
     $heightPx = $size[1];
 
-    // 2. Konversi Pixel ke Millimeter
-    // (FPDF menggunakan satuan mm. Asumsi 1px ≈ 0.264583 mm untuk 96 DPI)
-    // Rasio akan tetap terjaga selama faktor pengali W dan H sama.
+    // Konversi Pixel ke Millimeter
     $pxToMm = 0.264583; 
     $widthMm = $widthPx * $pxToMm;
     $heightMm = $heightPx * $pxToMm;
 
-    // 3. Tentukan Orientasi Otomatis (L = Landscape, P = Portrait)
     $orientation = ($widthPx > $heightPx) ? 'L' : 'P';
 
-    // 4. Inisialisasi PDF dengan Ukuran CUSTOM (Sesuai Gambar)
-    // Kita kirim array [$widthMm, $heightMm] sebagai ukuran kertas
     $pdf = new \FPDF($orientation, 'mm', array($widthMm, $heightMm));
-
-    // 5. Hapus Margin & AutoPageBreak
-    // Ini PENTING agar tidak ada gap putih atau halaman baru kosong
     $pdf->SetMargins(0, 0, 0);
     $pdf->SetAutoPageBreak(false);
-
     $pdf->AddPage();
-
-    // 6. Tempel Gambar Full Layar (Koordinat 0,0 sampai mentok W,H)
     $pdf->Image($source, 0, 0, $widthMm, $heightMm);
-
     $pdf->Output('F', $dest);
     return true;
 }
 
 function convertPDFToImage($source, $dest, $targetFormat) {
-    // Cek apakah ekstensi Imagick ada
     if (!extension_loaded('imagick')) {
         throw new Exception("Server Error: Extension Imagick belum terinstall.");
     }
 
     try {
         $imagick = new Imagick();
-        // Set resolusi DULU sebelum baca file
         $imagick->setResolution(150, 150); 
-        
-        $imagick->readImage($source . '[0]'); // Halaman pertama
+        $imagick->readImage($source . '[0]'); 
         
         if($targetFormat == 'jpg' || $targetFormat == 'jpeg') {
             $imagick->setImageFormat('jpeg');
             $imagick->setImageCompressionQuality(90);
-            
             $bg = new Imagick();
             $bg->newImage($imagick->getImageWidth(), $imagick->getImageHeight(), 'white');
             $bg->compositeImage($imagick, Imagick::COMPOSITE_OVER, 0, 0);
@@ -136,7 +121,6 @@ function convertPDFToImage($source, $dest, $targetFormat) {
         $imagick->clear();
         return true;
     } catch (Exception $e) {
-        // Tangkap error spesifik Imagick dan lempar ke main catch
         throw new Exception("Gagal konversi PDF: " . $e->getMessage());
     }
 }
@@ -155,10 +139,9 @@ try {
     }
 
     $file = $_FILES['file'];
-    $targetFormat = strtolower($_POST['target_format']); // jpg, png, pdf, webp
+    $targetFormat = strtolower($_POST['target_format']); 
     $extOriginal = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
     
-    // Path Sementara di Server
     $tempDir = __DIR__ . '/temp/';
     if (!is_dir($tempDir)) mkdir($tempDir, 0777, true);
     
@@ -166,7 +149,7 @@ try {
     $filenameResult = time() . '_conv_' . pathinfo($file['name'], PATHINFO_FILENAME) . '.' . $targetFormat;
     $tempResult = $tempDir . $filenameResult;
 
-    // 2. Pindahkan File Upload ke Folder Temp
+    // 2. Pindahkan ke Temp
     if (!move_uploaded_file($file['tmp_name'], $tempOriginal)) {
         throw new Exception("Gagal menyimpan file sementara.");
     }
@@ -181,18 +164,15 @@ try {
         'SourceFile' => $tempOriginal,
     ]);
 
-    // 4. LAKUKAN KONVERSI (SERVER SIDE)
+    // 4. LAKUKAN KONVERSI
     $success = false;
 
-    // A. GAMBAR KE GAMBAR
     if (in_array($extOriginal, ['jpg','jpeg','png','webp']) && in_array($targetFormat, ['jpg','jpeg','png','webp'])) {
         $success = convertImageToImage($tempOriginal, $tempResult, $targetFormat);
     }
-    // B. GAMBAR KE PDF
     elseif (in_array($extOriginal, ['jpg','jpeg','png','webp']) && $targetFormat == 'pdf') {
         $success = convertImageToPDF($tempOriginal, $tempResult);
     }
-    // C. PDF KE GAMBAR
     elseif ($extOriginal == 'pdf' && in_array($targetFormat, ['jpg','jpeg','png','webp'])) {
         $success = convertPDFToImage($tempOriginal, $tempResult, $targetFormat);
     }
@@ -210,35 +190,48 @@ try {
         'SourceFile' => $tempResult,
     ]);
 
-    // 6. Simpan Logs ke MySQL
+    // 6. Simpan Logs ke MySQL (Gunakan Link Permanen untuk DB)
+    $urlOriginal = $cdnDomain . "/" . $keyOriginal;
+    $urlConvertedPermanent = $cdnDomain . "/" . $keyConverted;
+
     $pdo = new PDO("mysql:host={$dbConfig['host']};port={$dbConfig['port']};dbname={$dbConfig['name']}", $dbConfig['user'], $dbConfig['pass']);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
-    $urlOriginal = $cdnDomain . "/" . $keyOriginal;
-    $urlConverted = $cdnDomain . "/" . $keyConverted;
 
     $stmt = $pdo->prepare("INSERT INTO conversion_logs (filename_original, filename_converted, path_original, path_converted, file_type, file_size_original) VALUES (?, ?, ?, ?, ?, ?)");
     $stmt->execute([
         $file['name'],
         $filenameResult,
         $urlOriginal,
-        $urlConverted,
-        'image/' . $targetFormat, // Simplified mime type
+        $urlConvertedPermanent,
+        'image/' . $targetFormat, 
         round($file['size'] / 1024, 2) . ' KB'
     ]);
 
-    // 7. Bersihkan File Temp
+    // --- 7. (BARU) GENERATE PRESIGNED URL ---
+    // Ini langkah kuncinya. Kita minta MinIO membuat URL sementara
+    // dengan header khusus agar browser langsung download file.
+    
+    $cmd = $s3->getCommand('GetObject', [
+        'Bucket' => $bucketName,
+        'Key'    => $keyConverted,
+        'ResponseContentDisposition' => 'attachment; filename="' . $filenameResult . '"'
+    ]);
+
+    // URL ini valid selama 1 jam
+    $request = $s3->createPresignedRequest($cmd, '+1 hour');
+    $presignedUrl = (string)$request->getUri();
+
+    // 8. Bersihkan File Temp
     @unlink($tempOriginal);
     @unlink($tempResult);
 
-    // 8. Berikan Response Link
+    // 9. Berikan Response (Download URL pakai Presigned URL)
     echo json_encode([
         'status' => 'success',
         'message' => 'Konversi Berhasil',
-        'download_url' => $urlConverted
+        'download_url' => $presignedUrl // <-- KITA PAKAI YANG PRESIGNED
     ]);
 
-// GANTI BAGIAN CATCH DI BAWAH INI:
 } catch (Throwable $e) {
     http_response_code(500);
     // Bersihkan semua sampah text/html sebelum kirim JSON
@@ -246,7 +239,9 @@ try {
     
     echo json_encode([
         'status' => 'error', 
-        'message' => $e->getMessage()
+        'message' => $e->getMessage(),
+        'file' => $e->getFile(),
+        'line' => $e->getLine()
     ]);
 }
 // Flush buffer terakhir

@@ -253,7 +253,8 @@ try {
         'status' => 'success',
         'message' => 'Konversi Berhasil',
         'download_url' => $presignedUrl,
-        'share_url' => 'http://' . $_SERVER['HTTP_HOST'] . '/' . $publicId
+        'share_url' => 'http://' . $_SERVER['HTTP_HOST'] . '/' . $publicId,
+        'created_at' => time() // <--- ADD THIS LINE (Current server timestamp)
     ]);
 
 } catch (Throwable $e) {

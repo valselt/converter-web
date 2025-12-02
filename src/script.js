@@ -1,6 +1,7 @@
 let currentFile = null;
 let selectedFormat = null;
 
+// Elements
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
 const actionPanel = document.getElementById('actionPanel');
@@ -16,7 +17,7 @@ const conversionLoader = document.getElementById('conversionLoader');
 const conversionProgressFill = document.getElementById('conversionProgressFill');
 const conversionStatusText = document.getElementById('conversionStatusText');
 
-// Elements Validasi
+// Elements Validasi & Controls Wrapper
 const validControls = document.getElementById('validFileControls');
 const errorView = document.getElementById('unsupportedView');
 
@@ -36,82 +37,6 @@ function generateProcessId() {
     return 'proc_' + Math.random().toString(36).substr(2, 9) + Date.now();
 }
 
-// --- TOMBOL KLIK KONVERSI (FULL LOGIC BARU) ---
-convertBtn.addEventListener('click', async () => {
-    if (!currentFile || !selectedFormat) return;
-
-    // 1. UI Loading Awal
-    convertBtn.classList.add('hidden');
-    conversionLoader.classList.remove('hidden');
-    conversionProgressFill.style.width = '0%';
-    conversionStatusText.textContent = "Menghubungi Server...";
-
-    // 2. Buat Process ID Unik
-    const processId = generateProcessId();
-
-    const formData = new FormData();
-    formData.append('file', currentFile);
-    formData.append('target_format', selectedFormat);
-    formData.append('process_id', processId); // Kirim ID ke Server
-
-    // 3. Jalankan Polling (Pengecekan Rutin)
-    let progressInterval = setInterval(async () => {
-        try {
-            const res = await fetch(`backend/check_progress.php?id=${processId}`);
-            const data = await res.json();
-            
-            if (data && data.percent) {
-                // Update UI Realtime dari Server
-                conversionProgressFill.style.width = data.percent + '%';
-                conversionStatusText.textContent = data.message;
-            }
-        } catch (e) {
-            // Ignore error polling (biar gak spam console)
-        }
-    }, 500); // Cek setiap setengah detik
-
-    try {
-        // 4. Kirim Request Utama (Proses ini akan memakan waktu lama)
-        const response = await fetch('backend/process.php', {
-            method: 'POST',
-            body: formData
-        });
-
-        // 5. Setelah Selesai, Hentikan Polling
-        clearInterval(progressInterval);
-
-        const result = await response.json();
-
-        if (result.status === 'success') {
-            // Paksa bar ke 100%
-            conversionProgressFill.style.width = '100%';
-            conversionStatusText.textContent = "Selesai!";
-            
-            statusMsg.style.color = "green";
-            statusMsg.textContent = "Konversi Berhasil!";
-            
-            // Auto Download
-            const a = document.createElement('a');
-            a.href = result.download_url;
-            a.download = ''; 
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-
-        } else {
-            throw new Error(result.message);
-        }
-
-    } catch (error) {
-        clearInterval(progressInterval); // Hentikan polling jika error
-        console.error(error);
-        statusMsg.style.color = "red";
-        statusMsg.textContent = "Gagal: " + error.message;
-        convertBtn.classList.remove('hidden');
-        conversionLoader.classList.add('hidden');
-    }
-});
-
 function handleFiles(files) {
     if (files.length === 0) return;
     const file = files[0];
@@ -129,7 +54,6 @@ function handleFiles(files) {
     const isValidType = file.type === 'application/pdf' || file.type.startsWith('image/');
 
     if (isValidType) {
-        // Tampilkan Kontrol, Sembunyikan Error
         if(validControls) validControls.classList.remove('hidden');
         if(errorView) errorView.classList.add('hidden');
 
@@ -147,46 +71,33 @@ function handleFiles(files) {
         generateOptions(currentFile.type);
 
     } else {
-        // Tampilkan Error, Sembunyikan Kontrol
         if(validControls) validControls.classList.add('hidden');
         if(errorView) errorView.classList.remove('hidden');
         
-        // Ikon Error
         previewImage.classList.add('hidden');
         defaultIcon.classList.remove('hidden');
         defaultIcon.textContent = 'warning'; 
     }
 }
 
-// --- LOGIKA FILTER OPSI (YANG DIPERBAIKI) ---
 function generateOptions(mimeType) {
     optionsGrid.innerHTML = ''; 
     
-    // CASE 1: INPUT ADALAH PDF -> Output ke Gambar
     if (mimeType === 'application/pdf') {
         createOptionCard('jpg', 'JPG', 'Gambar', 'photo_size_select_large');
         createOptionCard('png', 'PNG', 'Transparan', 'image');
         createOptionCard('webp', 'WEBP', 'Web Modern', 'public');
     }
-    // CASE 2: INPUT ADALAH GAMBAR -> Output ke Gambar Lain / PDF
     else if (mimeType.startsWith('image/')) {
-        
-        // Cek: Hanya tampilkan JPG jika input BUKAN jpg
         if (!mimeType.includes('jpeg') && !mimeType.includes('jpg')) {
             createOptionCard('jpg', 'JPG', 'Ringan', 'photo_size_select_large');
         }
-
-        // Cek: Hanya tampilkan PNG jika input BUKAN png
         if (!mimeType.includes('png')) {
             createOptionCard('png', 'PNG', 'Jernih', 'image');
         }
-
-        // Cek: Hanya tampilkan WEBP jika input BUKAN webp
         if (!mimeType.includes('webp')) {
             createOptionCard('webp', 'WEBP', 'Web', 'public');
         }
-
-        // PDF Selalu muncul untuk gambar
         createOptionCard('pdf', 'PDF', 'Dokumen', 'picture_as_pdf');
     }
 }
@@ -208,14 +119,31 @@ function createOptionCard(value, label, desc, iconName) {
 convertBtn.addEventListener('click', async () => {
     if (!currentFile || !selectedFormat) return;
 
+    // 1. UI Loading Awal
     convertBtn.classList.add('hidden');
+    // Sembunyikan Grid Pilihan saat proses berjalan
+    optionsGrid.parentElement.classList.add('hidden'); 
+    
     conversionLoader.classList.remove('hidden');
-    conversionProgressFill.style.width = '30%';
-    conversionStatusText.textContent = "Mengupload ke Server...";
+    conversionProgressFill.style.width = '0%';
+    conversionStatusText.textContent = "Menghubungi Server...";
 
+    const processId = generateProcessId();
     const formData = new FormData();
     formData.append('file', currentFile);
     formData.append('target_format', selectedFormat);
+    formData.append('process_id', processId);
+
+    let progressInterval = setInterval(async () => {
+        try {
+            const res = await fetch(`backend/check_progress.php?id=${processId}`);
+            const data = await res.json();
+            if (data && data.percent) {
+                conversionProgressFill.style.width = data.percent + '%';
+                conversionStatusText.textContent = data.message;
+            }
+        } catch (e) {}
+    }, 500);
 
     try {
         const response = await fetch('backend/process.php', {
@@ -223,15 +151,12 @@ convertBtn.addEventListener('click', async () => {
             body: formData
         });
 
-        conversionProgressFill.style.width = '70%';
-        conversionStatusText.textContent = "Server sedang mengkonversi...";
-
+        clearInterval(progressInterval);
         const result = await response.json();
 
         if (result.status === 'success') {
             conversionProgressFill.style.width = '100%';
             conversionStatusText.textContent = "Selesai!";
-            
             statusMsg.style.color = "green";
             statusMsg.textContent = "Konversi Berhasil!";
             
@@ -243,29 +168,77 @@ convertBtn.addEventListener('click', async () => {
             a.click();
             document.body.removeChild(a);
 
-            // --- TAMBAHAN: TOMBOL HALAMAN RECOVERY ---
-            // Buat tombol baru secara dinamis
+            // --- RECOVERY BUTTON WITH COUNTDOWN ---
             const recoveryBtn = document.createElement('a');
             recoveryBtn.href = result.share_url;
-            recoveryBtn.target = "_blank"; // Buka tab baru
-            recoveryBtn.className = "browse-btn"; // Pakai style tombol putih/secondary
+            recoveryBtn.target = "_blank"; 
+            recoveryBtn.className = "browse-btn"; 
             recoveryBtn.style.marginTop = "15px";
             recoveryBtn.style.display = "block";
             recoveryBtn.style.textAlign = "center";
             recoveryBtn.style.textDecoration = "none";
-            recoveryBtn.innerHTML = `<span class="material-symbols-rounded" style="font-size:18px; vertical-align:middle; margin-right:5px;">link</span> Halaman Download (Valid 24 Jam)`;
             
-            // Masukkan tombol ke bawah status message
+            // Calculate expiration (24 hours from creation)
+            // PHP returns seconds, JS needs milliseconds
+            const expireTime = (result.created_at * 1000) + (24 * 60 * 60 * 1000); 
+
+            // Countdown Function
+            const updateBtnCountdown = () => {
+                const now = new Date().getTime();
+                const distance = expireTime - now;
+
+                if (distance < 0) {
+                    recoveryBtn.innerHTML = `<span class="material-symbols-rounded" style="vertical-align:middle; margin-right:5px;">link_off</span> Link Kadaluarsa`;
+                    recoveryBtn.style.pointerEvents = "none";
+                    recoveryBtn.style.opacity = "0.6";
+                    return; // Stop updating
+                }
+
+                const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+                recoveryBtn.innerHTML = `<span class="material-symbols-rounded" style="font-size:18px; vertical-align:middle; margin-right:5px;">link</span> Halaman Download (${hours}j ${minutes}m ${seconds}d)`;
+            };
+
+            // Start Countdown
+            updateBtnCountdown();
+            setInterval(updateBtnCountdown, 1000);
+            
+            // Add buttons to UI
             statusMsg.parentNode.appendChild(recoveryBtn);
+            
+            // ... (Convert Again button logic remains exactly the same as before) ...
+            const convertAgainBtn = document.createElement('button');
+            convertAgainBtn.className = "convert-btn"; 
+            convertAgainBtn.style.marginTop = "10px";
+            convertAgainBtn.innerHTML = `<span class="material-symbols-rounded" style="font-size:18px; vertical-align:middle; margin-right:5px;">refresh</span> Konversi Lagi`;
+            
+            convertAgainBtn.onclick = function() {
+                recoveryBtn.remove();
+                convertAgainBtn.remove();
+                statusMsg.textContent = "";
+                optionsGrid.parentElement.classList.remove('hidden');
+                convertBtn.classList.remove('hidden');
+                convertBtn.disabled = true; 
+                selectedFormat = null;
+                document.querySelectorAll('.option-card').forEach(c => c.classList.remove('selected'));
+            };
+            statusMsg.parentNode.appendChild(convertAgainBtn);
+
         } else {
             throw new Error(result.message);
         }
 
     } catch (error) {
+        clearInterval(progressInterval);
         console.error(error);
         statusMsg.style.color = "red";
         statusMsg.textContent = "Gagal: " + error.message;
+        
+        // Jika gagal, kembalikan UI seperti semula
         convertBtn.classList.remove('hidden');
+        optionsGrid.parentElement.classList.remove('hidden');
         conversionLoader.classList.add('hidden');
     }
 });

@@ -1,11 +1,15 @@
 <?php
 // src/backend/process.php
 
+// 1. Setup Error Handling
 ini_set('display_errors', 0);
 ini_set('log_errors', 1); 
 error_reporting(E_ALL);
+
 ini_set('memory_limit', '512M'); 
 ini_set('max_execution_time', 300); 
+
+// Buffer output
 ob_start();
 
 require 'vendor/autoload.php';
@@ -17,13 +21,13 @@ header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST');
 
-// --- FUNGSI UPDATE PROGRESS (BARU) ---
+// --- FUNGSI UPDATE PROGRESS ---
 function updateProgress($percent, $message) {
     global $processId;
     if ($processId) {
         $file = __DIR__ . '/temp/progress_' . $processId . '.json';
         $data = json_encode(['percent' => $percent, 'message' => $message]);
-        file_put_contents($file, $data);
+        @file_put_contents($file, $data);
     }
 }
 
@@ -33,10 +37,17 @@ $minioConfig = [
     'region'  => 'us-east-1',
     'endpoint' => 'http://100.115.160.110:9010', 
     'use_path_style_endpoint' => true,
+    'signature_version' => 'v4', // Explicitly set v4
     'credentials' => [
         'key'    => 'admin',
         'secret' => 'aldorino04',
     ],
+    'http' => [
+        'expect' => false 
+    ],
+    // Disable automatic checksums
+    'request_checksum_calculation' => 'when_required',
+    'response_checksum_validation' => 'when_required',
 ];
 
 $dbConfig = [
@@ -50,8 +61,7 @@ $dbConfig = [
 $bucketName = "converter";
 $cdnDomain = "http://cdn.ivanaldorino.web.id/converter"; 
 
-// --- FUNGSI KONVERSI ---
-
+// --- FUNGSI BANTUAN KONVERSI ---
 function convertImageToImage($source, $dest, $targetFormat) {
     updateProgress(40, "Membaca gambar...");
     $info = getimagesize($source);
@@ -77,7 +87,6 @@ function convertImageToImage($source, $dest, $targetFormat) {
     elseif ($targetFormat == 'webp') {
         imagewebp($image, $dest, 80);
     }
-    
     imagedestroy($image);
     return true;
 }
@@ -105,15 +114,12 @@ function convertPDFToImage($source, $dest, $targetFormat) {
     if (!extension_loaded('imagick')) {
         throw new Exception("Server Error: Extension Imagick belum terinstall.");
     }
-
     try {
         updateProgress(40, "Menyiapkan engine PDF...");
         $imagick = new Imagick();
         $imagick->setResolution(150, 150); 
-        
         updateProgress(50, "Membaca halaman PDF...");
         $imagick->readImage($source . '[0]'); 
-        
         updateProgress(70, "Merender gambar...");
         if($targetFormat == 'jpg' || $targetFormat == 'jpeg') {
             $imagick->setImageFormat('jpeg');
@@ -127,7 +133,6 @@ function convertPDFToImage($source, $dest, $targetFormat) {
             $imagick->setImageFormat($targetFormat);
             $imagick->writeImage($dest);
         }
-        
         $imagick->clear();
         return true;
     } catch (Exception $e) {
@@ -142,7 +147,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// Ambil ID Process dari Client
 $processId = isset($_POST['process_id']) ? preg_replace('/[^a-zA-Z0-9]/', '', $_POST['process_id']) : null;
 
 try {
@@ -167,7 +171,7 @@ try {
         throw new Exception("Gagal menyimpan file sementara.");
     }
 
-    // 3. Upload ORIGINAL ke MinIO
+    // --- UPLOAD ORIGINAL ---
     updateProgress(20, "Backup file asli ke Cloud...");
     $s3 = new S3Client($minioConfig);
     $keyOriginal = 'original/' . basename($tempOriginal);
@@ -178,7 +182,7 @@ try {
         'SourceFile' => $tempOriginal,
     ]);
 
-    // 4. LAKUKAN KONVERSI
+    // --- KONVERSI ---
     updateProgress(30, "Memulai konversi...");
     $success = false;
 
@@ -197,16 +201,17 @@ try {
 
     if (!$success) throw new Exception("Gagal melakukan konversi di server.");
 
-    // 5. Upload HASIL KONVERSI ke MinIO
+    // --- UPLOAD HASIL ---
     updateProgress(80, "Mengupload hasil ke Cloud...");
     $keyConverted = 'converted/' . $filenameResult;
+    
     $s3->putObject([
         'Bucket' => $bucketName,
         'Key'    => $keyConverted,
         'SourceFile' => $tempResult,
     ]);
 
-    // 6. Simpan Logs ke MySQL
+    // --- DATABASE ---
     updateProgress(95, "Mencatat history...");
     $urlOriginal = $cdnDomain . "/" . $keyOriginal;
     $urlConvertedPermanent = $cdnDomain . "/" . $keyConverted;
@@ -214,8 +219,11 @@ try {
     $pdo = new PDO("mysql:host={$dbConfig['host']};port={$dbConfig['port']};dbname={$dbConfig['name']}", $dbConfig['user'], $dbConfig['pass']);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    $stmt = $pdo->prepare("INSERT INTO conversion_logs (filename_original, filename_converted, path_original, path_converted, file_type, file_size_original) VALUES (?, ?, ?, ?, ?, ?)");
+    $publicId = bin2hex(random_bytes(8));
+
+    $stmt = $pdo->prepare("INSERT INTO conversion_logs (public_id, filename_original, filename_converted, path_original, path_converted, file_type, file_size_original) VALUES (?, ?, ?, ?, ?, ?, ?)");
     $stmt->execute([
+        $publicId,
         $file['name'],
         $filenameResult,
         $urlOriginal,
@@ -224,7 +232,7 @@ try {
         round($file['size'] / 1024, 2) . ' KB'
     ]);
 
-    // 7. GENERATE PRESIGNED URL
+    // --- GENERATE PRESIGNED URL ---
     $cmd = $s3->getCommand('GetObject', [
         'Bucket' => $bucketName,
         'Key'    => $keyConverted,
@@ -234,11 +242,9 @@ try {
     $request = $s3->createPresignedRequest($cmd, '+1 hour');
     $presignedUrl = (string)$request->getUri();
 
-    // 8. Bersihkan
+    // CLEANUP
     @unlink($tempOriginal);
     @unlink($tempResult);
-    
-    // Hapus file progress
     if($processId) @unlink(__DIR__ . '/temp/progress_' . $processId . '.json');
 
     updateProgress(100, "Selesai!");
@@ -246,14 +252,14 @@ try {
     echo json_encode([
         'status' => 'success',
         'message' => 'Konversi Berhasil',
-        'download_url' => $presignedUrl
+        'download_url' => $presignedUrl,
+        'share_url' => 'http://' . $_SERVER['HTTP_HOST'] . '/' . $publicId
     ]);
 
 } catch (Throwable $e) {
     http_response_code(500);
     if (ob_get_length()) ob_clean(); 
     
-    // Hapus file progress jika error
     if(isset($processId)) @unlink(__DIR__ . '/temp/progress_' . $processId . '.json');
 
     echo json_encode([

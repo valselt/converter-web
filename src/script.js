@@ -235,7 +235,7 @@ convertBtn.addEventListener('click', async () => {
             statusMsg.style.color = "green";
             statusMsg.textContent = "Konversi Berhasil!";
             
-            // Auto Download via Presigned URL
+            // Auto Download
             const a = document.createElement('a');
             a.href = result.download_url;
             a.download = ''; 
@@ -243,6 +243,20 @@ convertBtn.addEventListener('click', async () => {
             a.click();
             document.body.removeChild(a);
 
+            // --- TAMBAHAN: TOMBOL HALAMAN RECOVERY ---
+            // Buat tombol baru secara dinamis
+            const recoveryBtn = document.createElement('a');
+            recoveryBtn.href = result.share_url;
+            recoveryBtn.target = "_blank"; // Buka tab baru
+            recoveryBtn.className = "browse-btn"; // Pakai style tombol putih/secondary
+            recoveryBtn.style.marginTop = "15px";
+            recoveryBtn.style.display = "block";
+            recoveryBtn.style.textAlign = "center";
+            recoveryBtn.style.textDecoration = "none";
+            recoveryBtn.innerHTML = `<span class="material-symbols-rounded" style="font-size:18px; vertical-align:middle; margin-right:5px;">link</span> Halaman Download (Valid 24 Jam)`;
+            
+            // Masukkan tombol ke bawah status message
+            statusMsg.parentNode.appendChild(recoveryBtn);
         } else {
             throw new Error(result.message);
         }

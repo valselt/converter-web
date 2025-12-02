@@ -29,26 +29,52 @@ function resetUI() {
 
 function handleFiles(files) {
     if (files.length === 0) return;
-    currentFile = files[0]; // Kita fokus 1 file dulu biar stabil
+    const file = files[0];
+    currentFile = file;
 
-    // UI Updates
+    // 1. Reset Tampilan Awal (Sembunyikan Dropzone, Munculkan Panel)
     dropzone.classList.add('hidden');
     actionPanel.classList.remove('hidden');
     
+    // 2. Isi Info File (Nama & Ukuran) agar user tahu apa yang mereka upload
     document.getElementById('fileName').textContent = currentFile.name;
     document.getElementById('fileSize').textContent = (currentFile.size / 1024).toFixed(2) + ' KB';
 
-    // Preview Simple
-    if (currentFile.type.startsWith('image/')) {
-        previewImage.src = URL.createObjectURL(currentFile);
-        previewImage.classList.remove('hidden');
-        defaultIcon.classList.add('hidden');
+    // 3. Ambil Element untuk Logic Toggle
+    const validControls = document.getElementById('validFileControls');
+    const errorView = document.getElementById('unsupportedView');
+    
+    // 4. LOGIKA VALIDASI
+    const isValidType = file.type === 'application/pdf' || file.type.startsWith('image/');
+
+    if (isValidType) {
+        // --- JIKA FILE BENAR ---
+        validControls.classList.remove('hidden'); // Tampilkan tombol
+        errorView.classList.add('hidden');        // Sembunyikan error
+        
+        // Setup Preview Gambar/Ikon
+        if (currentFile.type.startsWith('image/')) {
+            previewImage.src = URL.createObjectURL(currentFile);
+            previewImage.classList.remove('hidden');
+            defaultIcon.classList.add('hidden');
+        } else {
+            previewImage.classList.add('hidden');
+            defaultIcon.classList.remove('hidden');
+        }
+
+        // Generate Opsi
+        generateOptions(currentFile.type);
+
     } else {
+        // --- JIKA FILE SALAH ---
+        validControls.classList.add('hidden');    // Sembunyikan tombol
+        errorView.classList.remove('hidden');     // Tampilkan pesan error custom
+        
+        // Tampilkan ikon default (tanda tanya atau dokumen umum)
         previewImage.classList.add('hidden');
         defaultIcon.classList.remove('hidden');
+        defaultIcon.textContent = 'unknown_document'; // Ikon file tidak dikenal
     }
-
-    generateOptions(currentFile.type);
 }
 
 function generateOptions(mimeType) {

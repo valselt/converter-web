@@ -1,3 +1,5 @@
 docker compose up -d --build
 docker exec -it converter-php bash -c "mkdir -p backend && cd backend && composer require aws/aws-sdk-php"
 docker exec -it converter-php bash -c "cd backend && composer require setasign/fpdf"
+docker exec -it converter-php chown -R www-data:www-data /var/www/html
+docker exec -it converter-php chmod -R 775 /var/www/html/backend

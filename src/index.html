@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Smart Converter Local</title>
+    <link rel="icon" href="https://cdn.ivanaldorino.web.id/converter/cnvrtfavico.png" type="image/png" />
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -57,7 +58,6 @@
                 <div style="display: flex; align-items: center; gap: 15px;">
                     
                     <span id="defaultIcon" class="material-symbols-rounded icon-placeholder">description</span>
-                    
                     <img id="previewImage" class="file-preview hidden" alt="Preview">
 
                     <div style="display: flex; flex-direction: column; align-items: flex-start;">
@@ -71,24 +71,35 @@
                 </button>
             </div>
 
-            <div class="controls">
-                <label>Pilih Format Tujuan:</label>
-                <div id="optionsGrid" class="options-grid">
-                    </div>
-            </div>
-
-            <div id="conversionLoader" class="hidden" style="margin-bottom: 20px; text-align: center;">
-                <div class="progress-container">
-                    <div class="progress-fill" id="conversionProgressFill"></div>
+            <div id="validFileControls">
+                <div class="controls">
+                    <label>Pilih Format Tujuan:</label>
+                    <div id="optionsGrid" class="options-grid">
+                        </div>
                 </div>
-                <p id="conversionStatusText" style="margin-top: 8px; font-size: 0.85rem; color: var(--text-muted);">Menyiapkan...</p>
+
+                <div id="conversionLoader" class="hidden" style="margin-bottom: 20px; text-align: center;">
+                    <div class="progress-container">
+                        <div class="progress-fill" id="conversionProgressFill"></div>
+                    </div>
+                    <p id="conversionStatusText" style="margin-top: 8px; font-size: 0.85rem; color: var(--text-muted);">Menyiapkan...</p>
+                </div>
+
+                <button id="convertBtn" class="convert-btn" disabled>
+                    Mulai Konversi
+                </button>
+                <p id="statusMsg"></p>
             </div>
 
-            <button id="convertBtn" class="convert-btn" disabled>
-                Mulai Konversi
-            </button>
+            <div id="unsupportedView" class="hidden error-state">
+                <div class="error-icon-box">
+                    <span class="material-symbols-rounded">warning</span>
+                </div>
+                <h3>Format Tidak Didukung</h3>
+                <p>Maaf, kami hanya menerima file Gambar (JPG, PNG, WEBP) atau PDF.</p>
+                <p style="font-size: 0.8rem; color: #6B7280; margin-top: 5px;">Silakan klik tombol (X) diatas untuk mengganti file.</p>
+            </div>
 
-            <p id="statusMsg"></p>
         </div>
 
         <div id="resultArea" class="hidden">

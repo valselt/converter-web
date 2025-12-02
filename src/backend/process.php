@@ -1,15 +1,11 @@
 <?php
 // src/backend/process.php
 
-// 1. Matikan Output Error ke Browser (Agar JSON bersih)
 ini_set('display_errors', 0);
 ini_set('log_errors', 1); 
 error_reporting(E_ALL);
-
 ini_set('memory_limit', '512M'); 
 ini_set('max_execution_time', 300); 
-
-// Buffer output untuk menangkap warning tak terduga
 ob_start();
 
 require 'vendor/autoload.php';
@@ -20,6 +16,16 @@ use Setasign\Fpdf\Fpdf;
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST');
+
+// --- FUNGSI UPDATE PROGRESS (BARU) ---
+function updateProgress($percent, $message) {
+    global $processId;
+    if ($processId) {
+        $file = __DIR__ . '/temp/progress_' . $processId . '.json';
+        $data = json_encode(['percent' => $percent, 'message' => $message]);
+        file_put_contents($file, $data);
+    }
+}
 
 // --- KONFIGURASI ---
 $minioConfig = [
@@ -44,15 +50,17 @@ $dbConfig = [
 $bucketName = "converter";
 $cdnDomain = "http://cdn.ivanaldorino.web.id/converter"; 
 
-// --- FUNGSI BANTUAN KONVERSI ---
+// --- FUNGSI KONVERSI ---
 
 function convertImageToImage($source, $dest, $targetFormat) {
+    updateProgress(40, "Membaca gambar...");
     $info = getimagesize($source);
     if ($info['mime'] == 'image/jpeg') $image = imagecreatefromjpeg($source);
     elseif ($info['mime'] == 'image/png') $image = imagecreatefrompng($source);
     elseif ($info['mime'] == 'image/webp') $image = imagecreatefromwebp($source);
     else return false;
 
+    updateProgress(60, "Mengubah format...");
     if ($targetFormat == 'jpg' || $targetFormat == 'jpeg') {
         $bg = imagecreatetruecolor(imagesx($image), imagesy($image));
         imagefill($bg, 0, 0, imagecolorallocate($bg, 255, 255, 255));
@@ -75,15 +83,13 @@ function convertImageToImage($source, $dest, $targetFormat) {
 }
 
 function convertImageToPDF($source, $dest) {
+    updateProgress(50, "Membuat halaman PDF...");
     $size = getimagesize($source);
     $widthPx = $size[0];
     $heightPx = $size[1];
-
-    // Konversi Pixel ke Millimeter
     $pxToMm = 0.264583; 
     $widthMm = $widthPx * $pxToMm;
     $heightMm = $heightPx * $pxToMm;
-
     $orientation = ($widthPx > $heightPx) ? 'L' : 'P';
 
     $pdf = new \FPDF($orientation, 'mm', array($widthMm, $heightMm));
@@ -101,10 +107,14 @@ function convertPDFToImage($source, $dest, $targetFormat) {
     }
 
     try {
+        updateProgress(40, "Menyiapkan engine PDF...");
         $imagick = new Imagick();
         $imagick->setResolution(150, 150); 
+        
+        updateProgress(50, "Membaca halaman PDF...");
         $imagick->readImage($source . '[0]'); 
         
+        updateProgress(70, "Merender gambar...");
         if($targetFormat == 'jpg' || $targetFormat == 'jpeg') {
             $imagick->setImageFormat('jpeg');
             $imagick->setImageCompressionQuality(90);
@@ -132,8 +142,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+// Ambil ID Process dari Client
+$processId = isset($_POST['process_id']) ? preg_replace('/[^a-zA-Z0-9]/', '', $_POST['process_id']) : null;
+
 try {
-    // 1. Validasi Input
+    updateProgress(5, "Menerima file...");
+
     if (!isset($_FILES['file']) || !isset($_POST['target_format'])) {
         throw new Exception("Data tidak lengkap.");
     }
@@ -149,12 +163,12 @@ try {
     $filenameResult = time() . '_conv_' . pathinfo($file['name'], PATHINFO_FILENAME) . '.' . $targetFormat;
     $tempResult = $tempDir . $filenameResult;
 
-    // 2. Pindahkan ke Temp
     if (!move_uploaded_file($file['tmp_name'], $tempOriginal)) {
         throw new Exception("Gagal menyimpan file sementara.");
     }
 
     // 3. Upload ORIGINAL ke MinIO
+    updateProgress(20, "Backup file asli ke Cloud...");
     $s3 = new S3Client($minioConfig);
     $keyOriginal = 'original/' . basename($tempOriginal);
     
@@ -165,6 +179,7 @@ try {
     ]);
 
     // 4. LAKUKAN KONVERSI
+    updateProgress(30, "Memulai konversi...");
     $success = false;
 
     if (in_array($extOriginal, ['jpg','jpeg','png','webp']) && in_array($targetFormat, ['jpg','jpeg','png','webp'])) {
@@ -183,6 +198,7 @@ try {
     if (!$success) throw new Exception("Gagal melakukan konversi di server.");
 
     // 5. Upload HASIL KONVERSI ke MinIO
+    updateProgress(80, "Mengupload hasil ke Cloud...");
     $keyConverted = 'converted/' . $filenameResult;
     $s3->putObject([
         'Bucket' => $bucketName,
@@ -190,7 +206,8 @@ try {
         'SourceFile' => $tempResult,
     ]);
 
-    // 6. Simpan Logs ke MySQL (Gunakan Link Permanen untuk DB)
+    // 6. Simpan Logs ke MySQL
+    updateProgress(95, "Mencatat history...");
     $urlOriginal = $cdnDomain . "/" . $keyOriginal;
     $urlConvertedPermanent = $cdnDomain . "/" . $keyConverted;
 
@@ -207,36 +224,38 @@ try {
         round($file['size'] / 1024, 2) . ' KB'
     ]);
 
-    // --- 7. (BARU) GENERATE PRESIGNED URL ---
-    // Ini langkah kuncinya. Kita minta MinIO membuat URL sementara
-    // dengan header khusus agar browser langsung download file.
-    
+    // 7. GENERATE PRESIGNED URL
     $cmd = $s3->getCommand('GetObject', [
         'Bucket' => $bucketName,
         'Key'    => $keyConverted,
         'ResponseContentDisposition' => 'attachment; filename="' . $filenameResult . '"'
     ]);
 
-    // URL ini valid selama 1 jam
     $request = $s3->createPresignedRequest($cmd, '+1 hour');
     $presignedUrl = (string)$request->getUri();
 
-    // 8. Bersihkan File Temp
+    // 8. Bersihkan
     @unlink($tempOriginal);
     @unlink($tempResult);
+    
+    // Hapus file progress
+    if($processId) @unlink(__DIR__ . '/temp/progress_' . $processId . '.json');
 
-    // 9. Berikan Response (Download URL pakai Presigned URL)
+    updateProgress(100, "Selesai!");
+
     echo json_encode([
         'status' => 'success',
         'message' => 'Konversi Berhasil',
-        'download_url' => $presignedUrl // <-- KITA PAKAI YANG PRESIGNED
+        'download_url' => $presignedUrl
     ]);
 
 } catch (Throwable $e) {
     http_response_code(500);
-    // Bersihkan semua sampah text/html sebelum kirim JSON
     if (ob_get_length()) ob_clean(); 
     
+    // Hapus file progress jika error
+    if(isset($processId)) @unlink(__DIR__ . '/temp/progress_' . $processId . '.json');
+
     echo json_encode([
         'status' => 'error', 
         'message' => $e->getMessage(),
@@ -244,6 +263,5 @@ try {
         'line' => $e->getLine()
     ]);
 }
-// Flush buffer terakhir
 ob_end_flush();
 ?>

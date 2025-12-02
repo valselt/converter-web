@@ -31,6 +31,87 @@ function resetUI() {
     location.reload(); 
 }
 
+// --- FUNGSI BANTUAN ID ACAK ---
+function generateProcessId() {
+    return 'proc_' + Math.random().toString(36).substr(2, 9) + Date.now();
+}
+
+// --- TOMBOL KLIK KONVERSI (FULL LOGIC BARU) ---
+convertBtn.addEventListener('click', async () => {
+    if (!currentFile || !selectedFormat) return;
+
+    // 1. UI Loading Awal
+    convertBtn.classList.add('hidden');
+    conversionLoader.classList.remove('hidden');
+    conversionProgressFill.style.width = '0%';
+    conversionStatusText.textContent = "Menghubungi Server...";
+
+    // 2. Buat Process ID Unik
+    const processId = generateProcessId();
+
+    const formData = new FormData();
+    formData.append('file', currentFile);
+    formData.append('target_format', selectedFormat);
+    formData.append('process_id', processId); // Kirim ID ke Server
+
+    // 3. Jalankan Polling (Pengecekan Rutin)
+    let progressInterval = setInterval(async () => {
+        try {
+            const res = await fetch(`backend/check_progress.php?id=${processId}`);
+            const data = await res.json();
+            
+            if (data && data.percent) {
+                // Update UI Realtime dari Server
+                conversionProgressFill.style.width = data.percent + '%';
+                conversionStatusText.textContent = data.message;
+            }
+        } catch (e) {
+            // Ignore error polling (biar gak spam console)
+        }
+    }, 500); // Cek setiap setengah detik
+
+    try {
+        // 4. Kirim Request Utama (Proses ini akan memakan waktu lama)
+        const response = await fetch('backend/process.php', {
+            method: 'POST',
+            body: formData
+        });
+
+        // 5. Setelah Selesai, Hentikan Polling
+        clearInterval(progressInterval);
+
+        const result = await response.json();
+
+        if (result.status === 'success') {
+            // Paksa bar ke 100%
+            conversionProgressFill.style.width = '100%';
+            conversionStatusText.textContent = "Selesai!";
+            
+            statusMsg.style.color = "green";
+            statusMsg.textContent = "Konversi Berhasil!";
+            
+            // Auto Download
+            const a = document.createElement('a');
+            a.href = result.download_url;
+            a.download = ''; 
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+        } else {
+            throw new Error(result.message);
+        }
+
+    } catch (error) {
+        clearInterval(progressInterval); // Hentikan polling jika error
+        console.error(error);
+        statusMsg.style.color = "red";
+        statusMsg.textContent = "Gagal: " + error.message;
+        convertBtn.classList.remove('hidden');
+        conversionLoader.classList.add('hidden');
+    }
+});
+
 function handleFiles(files) {
     if (files.length === 0) return;
     const file = files[0];

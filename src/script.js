@@ -16,6 +16,10 @@ const conversionLoader = document.getElementById('conversionLoader');
 const conversionProgressFill = document.getElementById('conversionProgressFill');
 const conversionStatusText = document.getElementById('conversionStatusText');
 
+// Elements Validasi
+const validControls = document.getElementById('validFileControls');
+const errorView = document.getElementById('unsupportedView');
+
 // --- EVENT LISTENERS ---
 dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
 dropzone.addEventListener('dragleave', () => { dropzone.classList.remove('dragover'); });
@@ -24,7 +28,7 @@ fileInput.addEventListener('change', (e) => { handleFiles(e.target.files); });
 resetBtn.addEventListener('click', resetUI);
 
 function resetUI() {
-    location.reload(); // Cara paling bersih untuk reset
+    location.reload(); 
 }
 
 function handleFiles(files) {
@@ -32,27 +36,23 @@ function handleFiles(files) {
     const file = files[0];
     currentFile = file;
 
-    // 1. Reset Tampilan Awal (Sembunyikan Dropzone, Munculkan Panel)
+    // UI Updates Awal
     dropzone.classList.add('hidden');
     actionPanel.classList.remove('hidden');
     
-    // 2. Isi Info File (Nama & Ukuran) agar user tahu apa yang mereka upload
+    // Info File
     document.getElementById('fileName').textContent = currentFile.name;
     document.getElementById('fileSize').textContent = (currentFile.size / 1024).toFixed(2) + ' KB';
 
-    // 3. Ambil Element untuk Logic Toggle
-    const validControls = document.getElementById('validFileControls');
-    const errorView = document.getElementById('unsupportedView');
-    
-    // 4. LOGIKA VALIDASI
+    // LOGIKA VALIDASI & PREVIEW
     const isValidType = file.type === 'application/pdf' || file.type.startsWith('image/');
 
     if (isValidType) {
-        // --- JIKA FILE BENAR ---
-        validControls.classList.remove('hidden'); // Tampilkan tombol
-        errorView.classList.add('hidden');        // Sembunyikan error
-        
-        // Setup Preview Gambar/Ikon
+        // Tampilkan Kontrol, Sembunyikan Error
+        if(validControls) validControls.classList.remove('hidden');
+        if(errorView) errorView.classList.add('hidden');
+
+        // Preview Logic
         if (currentFile.type.startsWith('image/')) {
             previewImage.src = URL.createObjectURL(currentFile);
             previewImage.classList.remove('hidden');
@@ -60,35 +60,52 @@ function handleFiles(files) {
         } else {
             previewImage.classList.add('hidden');
             defaultIcon.classList.remove('hidden');
+            defaultIcon.textContent = file.type === 'application/pdf' ? 'picture_as_pdf' : 'description';
         }
 
-        // Generate Opsi
         generateOptions(currentFile.type);
 
     } else {
-        // --- JIKA FILE SALAH ---
-        validControls.classList.add('hidden');    // Sembunyikan tombol
-        errorView.classList.remove('hidden');     // Tampilkan pesan error custom
+        // Tampilkan Error, Sembunyikan Kontrol
+        if(validControls) validControls.classList.add('hidden');
+        if(errorView) errorView.classList.remove('hidden');
         
-        // Tampilkan ikon default (tanda tanya atau dokumen umum)
+        // Ikon Error
         previewImage.classList.add('hidden');
         defaultIcon.classList.remove('hidden');
-        defaultIcon.textContent = 'unknown_document'; // Ikon file tidak dikenal
+        defaultIcon.textContent = 'warning'; 
     }
 }
 
+// --- LOGIKA FILTER OPSI (YANG DIPERBAIKI) ---
 function generateOptions(mimeType) {
     optionsGrid.innerHTML = ''; 
-    // Format tujuan yang dikirim ke server: 'jpg', 'png', 'webp', 'pdf'
     
+    // CASE 1: INPUT ADALAH PDF -> Output ke Gambar
     if (mimeType === 'application/pdf') {
         createOptionCard('jpg', 'JPG', 'Gambar', 'photo_size_select_large');
         createOptionCard('png', 'PNG', 'Transparan', 'image');
+        createOptionCard('webp', 'WEBP', 'Web Modern', 'public');
     }
+    // CASE 2: INPUT ADALAH GAMBAR -> Output ke Gambar Lain / PDF
     else if (mimeType.startsWith('image/')) {
-        createOptionCard('jpg', 'JPG', 'Ringan', 'photo_size_select_large');
-        createOptionCard('png', 'PNG', 'Jernih', 'image');
-        createOptionCard('webp', 'WEBP', 'Web', 'public');
+        
+        // Cek: Hanya tampilkan JPG jika input BUKAN jpg
+        if (!mimeType.includes('jpeg') && !mimeType.includes('jpg')) {
+            createOptionCard('jpg', 'JPG', 'Ringan', 'photo_size_select_large');
+        }
+
+        // Cek: Hanya tampilkan PNG jika input BUKAN png
+        if (!mimeType.includes('png')) {
+            createOptionCard('png', 'PNG', 'Jernih', 'image');
+        }
+
+        // Cek: Hanya tampilkan WEBP jika input BUKAN webp
+        if (!mimeType.includes('webp')) {
+            createOptionCard('webp', 'WEBP', 'Web', 'public');
+        }
+
+        // PDF Selalu muncul untuk gambar
         createOptionCard('pdf', 'PDF', 'Dokumen', 'picture_as_pdf');
     }
 }
@@ -110,7 +127,6 @@ function createOptionCard(value, label, desc, iconName) {
 convertBtn.addEventListener('click', async () => {
     if (!currentFile || !selectedFormat) return;
 
-    // UI Loading
     convertBtn.classList.add('hidden');
     conversionLoader.classList.remove('hidden');
     conversionProgressFill.style.width = '30%';
@@ -121,7 +137,6 @@ convertBtn.addEventListener('click', async () => {
     formData.append('target_format', selectedFormat);
 
     try {
-        // Kirim ke Backend PHP
         const response = await fetch('backend/process.php', {
             method: 'POST',
             body: formData
@@ -139,10 +154,10 @@ convertBtn.addEventListener('click', async () => {
             statusMsg.style.color = "green";
             statusMsg.textContent = "Konversi Berhasil!";
             
-            // Auto Download
+            // Auto Download via Presigned URL
             const a = document.createElement('a');
             a.href = result.download_url;
-            a.download = ''; // Biarkan nama dari server/browser
+            a.download = ''; 
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
